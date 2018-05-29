@@ -73,12 +73,32 @@ namespace GroceryStore.Controllers
                 return View(model);
             }
 
+            //check if a user was previously logged in without logging out. This can occur for example   
+            //if a logged in user is redirected to an admin page and then an admin user logs in
+            bool userWasLoggedIn = false;
+            if (!string.IsNullOrWhiteSpace(User.Identity.Name))
+            {
+                userWasLoggedIn = true;
+            }
+
             // This doesn't count login failures towards account lockout
             // To enable password failures to trigger account lockout, change to shouldLockout: true
             var result = await SignInManager.PasswordSignInAsync(model.Email, model.Password, model.RememberMe, shouldLockout: false);
             switch (result)
             {
                 case SignInStatus.Success:
+                    //this is needed to ensure the previous user's basket is not carried over
+                    if (userWasLoggedIn)
+                    {
+                        Session.Abandon();
+                    }
+                    Basket basket = Basket.GetBasket();
+                    //if there was no previously logged in user migrate the basket from GUID to the 
+                    //username
+                    if (!userWasLoggedIn)
+                    {
+                        basket.MigrateBasket(model.Email);
+                    }
                     return RedirectToLocal(returnUrl);
                 case SignInStatus.LockedOut:
                     return View("Lockout");
@@ -160,6 +180,8 @@ namespace GroceryStore.Controllers
                 {
                     await UserManager.AddToRoleAsync(user.Id, "Users");
                     await SignInManager.SignInAsync(user, isPersistent:false, rememberBrowser:false);
+                    Basket basket = new Basket();
+                    basket.MigrateBasket(model.Email);
                     
                     // For more information on how to enable account confirmation and password reset please visit https://go.microsoft.com/fwlink/?LinkID=320771
                     // Send an email with this link
@@ -397,6 +419,7 @@ namespace GroceryStore.Controllers
         public ActionResult LogOff()
         {
             AuthenticationManager.SignOut(DefaultAuthenticationTypes.ApplicationCookie);
+            Session.Abandon();
             return RedirectToAction("Index", "Home");
         }
 
